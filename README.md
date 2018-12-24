@@ -1,4 +1,4 @@
-# render #
+# go-render
 
 This project is written by golang. Easily rendering serialized JSON, XML, and HTML template responses use http.ResponseWriter. It's migration from 'github.com/martini-contrib/render'
 
@@ -17,17 +17,23 @@ import (
 )
 
 func main() {
-	// 初始化Render
-	render.Renderer(render.Options{
-		Directory:  "templates",               // Specify what path to load the templates from.
-		Layout:     "layout",                  // Specify a layout template. Layouts can call {{ yield }} to render the current template.
-		Extensions: []string{".tmpl"},         // Specify extensions to load for templates.
-		Delims:     render.Delims{"{{", "}}"}, // Sets delimiters to the specified strings.
-		Charset:    "UTF-8",                   // Sets encoding for json and html content-types. Default is "UTF-8".
-		// IndentJSON: true,                        // Output human readable JSON
-		// IndentXML:  true,                        // Output human readable XML
-		// HTMLContentType: "application/xhtml+xml",   // Output XHTML content type instead of default "text/html"
-	})
+    var funcMap = template.FuncMap{
+        "Add":        func(l, r int) int { return l + r },
+        "FormatTime": func(t time.Time, str string) string { return util.NewDate().Format(t, str) },
+    }
+
+    // 初始化render
+    render.Render(render.Options{
+        Directory:  "templates",               // Specify what path to load the templates from.
+        Layout:     "layout",                  // Specify a layout template. Layouts can call {{ yield }} to render the current template.
+        Extensions: []string{".tmpl", ".html"},// Specify extensions to load for templates.
+        Delims:     render.Delims{"{{", "}}"}, // Sets delimiters to the specified strings.
+        Charset:    "UTF-8",                   // Sets encoding for json and html content-types. Default is "UTF-8".
+        IndentJSON: true,                      // Output human readable JSON
+        IndentXML:  true,                      // Output human readable XML
+        FuncMap:    funcMap,                   // Functions add to template
+        HTMLContentType: render.ContentHTML,   // Output XHTML content type instead of default "text/html"
+    })
 
 	r := gin.Default()
 	// 添加路由
@@ -36,10 +42,9 @@ func main() {
 		d := map[string]template.HTML{
 			"Title": "登陆",
 		}
-		// 获取实例
-		r := render.GetInst()
+
 		// 渲染HTML
-		r.HTML(ctx.Writer, 200, "index", d)
+		render.HTML(ctx.Writer, 200, "index", d)
 	})
 	// 设置http服务
 	s := &http.Server{
@@ -83,4 +88,4 @@ The following templates:
 ```
 
 ## Authors ##
-[Zhang Chaoren](https://openeasy.net/cr "Zhang Chaoren")
+[Sky](https://github.com/skygangsta/ "Skygangsta")

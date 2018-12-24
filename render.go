@@ -1,5 +1,14 @@
-// This file is copy from 'github.com/martini-contrib/render' which is under
-// The MIT License (MIT)
+/* Copyright 2018 sky<skygangsta@hotmail.com>. All rights reserved.
+ *
+ * Licensed under the Apache License, version 2.0 (the "License").
+ * You may not use this work except in compliance with the License, which is
+ * available at www.apache.org/licenses/LICENSE-2.0
+ *
+ * This software is distributed on an "AS IS" basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied, as more fully set forth in the License.
+ *
+ * See the NOTICE file distributed with this work for information regarding copyright ownership.
+ */
 
 package render
 
@@ -8,6 +17,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"github.com/skygangsta/go-helper"
 	"html/template"
 	"io"
 	"io/ioutil"
@@ -30,8 +40,9 @@ const (
 )
 
 var (
-	render *renderer
-	buffer *BufferPool
+	render  *template.Template
+	buffer  *helper.BufferPool
+	options Options
 )
 
 // Included helper functions for use when rendering html
@@ -44,15 +55,15 @@ var helperFuncs = template.FuncMap{
 	},
 }
 
-// Delims represents a set of Left and Right delimiters for HTML template rendering
-type Delims struct {
+// Delimiter represents a set of Left and Right delimiters for HTML template rendering
+type Delimiter struct {
 	// Left delimiter, defaults to {{
 	Left string
 	// Right delimiter, defaults to }}
 	Right string
 }
 
-// Options is a struct for specifying configuration options for the render.Renderer middleware
+// Options is a struct for specifying configuration options for the render.Render middleware
 type Options struct {
 	// Directory to load templates. Default is "templates"
 	Directory string
@@ -60,10 +71,10 @@ type Options struct {
 	Layout string
 	// Extensions to parse template files from. Defaults to [".tmpl"]
 	Extensions []string
-	// Funcs is a slice of FuncMaps to apply to the template upon compilation. This is useful for helper functions. Defaults to [].
-	Funcs []template.FuncMap
-	// Delims sets the action delimiters to the specified strings in the Delims struct.
-	Delims Delims
+	// Funcs is a slice of FuncMap to apply to the template upon compilation. This is useful for helper functions. Defaults to [].
+	FuncMap template.FuncMap
+	// Delimiter sets the action delimiters to the specified strings in the Delimiter struct.
+	Delimiter Delimiter
 	// Appends the given charset to the Content-Type header. Default is "UTF-8".
 	Charset string
 	// Outputs human readable JSON
@@ -76,6 +87,7 @@ type Options struct {
 	PrefixXML []byte
 	// Allows changing of output to XHTML instead of HTML. Default is "text/html"
 	HTMLContentType string
+	BufferPool      int
 }
 
 // HTMLOptions is a struct for overriding some rendering Options for specific HTML call
@@ -84,20 +96,12 @@ type HTMLOptions struct {
 	Layout string
 }
 
-// Renderer is a external rendering. An single variadic render.Options struct can be optionally provided to configure HTML
+// Render is a external rendering. An single variadic render.Options struct can be optionally provided to configure HTML
 // rendering. The default directory for templates is "templates" and the default file extension is ".tmpl".
-func Renderer(options ...Options) {
-	opt := prepareOptions(options)
-	cs := prepareCharset(opt.Charset)
-	t := compile(opt)
-	buffer = NewBufferPool(64)
-
-	render = &renderer{t, opt, cs}
-}
-
-// GetInst is get renderer instance.
-func GetInst() *renderer {
-	return render
+func Render(o Options) {
+	options = prepareOptions(o)
+	render = createTemplate(options)
+	buffer = helper.NewBufferPool(options.BufferPool)
 }
 
 func prepareCharset(charset string) string {
@@ -108,40 +112,39 @@ func prepareCharset(charset string) string {
 	return "; charset=" + defaultCharset
 }
 
-func prepareOptions(options []Options) Options {
-	var opt Options
-	if len(options) > 0 {
-		opt = options[0]
-	}
-
+func prepareOptions(options Options) Options {
 	// Defaults
-	if len(opt.Directory) == 0 {
-		opt.Directory = "templates"
+	if len(options.Directory) == 0 {
+		options.Directory = "templates"
 	}
-	if len(opt.Extensions) == 0 {
-		opt.Extensions = []string{".tmpl"}
+	if len(options.Extensions) == 0 {
+		options.Extensions = []string{".tmpl"}
 	}
-	if len(opt.HTMLContentType) == 0 {
-		opt.HTMLContentType = ContentHTML
+	if len(options.HTMLContentType) == 0 {
+		options.HTMLContentType = ContentHTML
 	}
 
-	return opt
+	if options.BufferPool == 0 {
+		options.BufferPool = 128
+	}
+
+	return options
 }
 
-func compile(options Options) *template.Template {
+func createTemplate(options Options) *template.Template {
 	dir := options.Directory
-	t := template.New(dir)
-	t.Delims(options.Delims.Left, options.Delims.Right)
-	// parse an initial template in case we don't have any
-	template.Must(t.Parse("TMPL"))
 
+	t := template.New(dir)
+	t.Delims(options.Delimiter.Left, options.Delimiter.Right)
+
+	// check template file error
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		r, err := filepath.Rel(dir, path)
+		relativePath, err := filepath.Rel(dir, path)
 		if err != nil {
 			return err
 		}
 
-		ext := getExt(r)
+		ext := getExt(relativePath)
 
 		for _, extension := range options.Extensions {
 			if ext == extension {
@@ -151,15 +154,12 @@ func compile(options Options) *template.Template {
 					panic(err)
 				}
 
-				name := (r[0 : len(r)-len(ext)])
+				name := relativePath[0 : len(relativePath)-len(ext)]
 				tmpl := t.New(filepath.ToSlash(name))
 
-				// add our funcmaps
-				for _, funcs := range options.Funcs {
-					tmpl.Funcs(funcs)
-				}
+				tmpl.Funcs(options.FuncMap)
 
-				// Bomb out if parse fails. We don't want any silent server starts.
+				// Bomb out if parse fails. When the server starts.
 				template.Must(tmpl.Funcs(helperFuncs).Parse(string(buf)))
 				break
 			}
@@ -178,18 +178,10 @@ func getExt(s string) string {
 	return "." + strings.Join(strings.Split(s, ".")[1:], ".")
 }
 
-type renderer struct {
-	// http.ResponseWriter
-	// req             *http.Request
-	t               *template.Template
-	opt             Options
-	compiledCharset string
-}
-
-func (r *renderer) JSON(w http.ResponseWriter, status int, v interface{}) {
+func JSON(w http.ResponseWriter, status int, v interface{}) {
 	var result []byte
 	var err error
-	if r.opt.IndentJSON {
+	if options.IndentJSON {
 		result, err = json.MarshalIndent(v, "", "  ")
 	} else {
 		result, err = json.Marshal(v)
@@ -200,40 +192,40 @@ func (r *renderer) JSON(w http.ResponseWriter, status int, v interface{}) {
 	}
 
 	// json rendered fine, write out the result
-	w.Header().Set(ContentType, ContentJSON+r.compiledCharset)
+	w.Header().Set(ContentType, ContentJSON+prepareCharset(options.Charset))
 	w.WriteHeader(status)
-	if len(r.opt.PrefixJSON) > 0 {
-		w.Write(r.opt.PrefixJSON)
+	if len(options.PrefixJSON) > 0 {
+		w.Write(options.PrefixJSON)
 	}
 	w.Write(result)
 }
 
-func (r *renderer) HTML(w http.ResponseWriter, status int, name string, binding interface{}, htmlOpt ...HTMLOptions) {
-	opt := r.prepareHTMLOptions(htmlOpt)
+func HTML(w http.ResponseWriter, status int, name string, binding interface{}, htmlOptions ...HTMLOptions) {
+	option := prepareHTMLOptions(htmlOptions)
 	// assign a layout if there is one
-	if len(opt.Layout) > 0 {
-		r.addYield(name, binding)
-		name = opt.Layout
+	if len(option.Layout) > 0 {
+		addYield(name, binding)
+		name = option.Layout
 	}
 
-	buf, err := r.execute(name, binding)
+	buf, err := execute(name, binding)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// template rendered fine, write out the result
-	w.Header().Set(ContentType, r.opt.HTMLContentType+r.compiledCharset)
+	w.Header().Set(ContentType, options.HTMLContentType+prepareCharset(options.Charset))
 	w.WriteHeader(status)
 	io.Copy(w, buf)
-	// Put buffer in BufferPool
-	buffer.Put(buf)
+	// Set buffer in BufferPool
+	buffer.Set(buf)
 }
 
-func (r *renderer) XML(w http.ResponseWriter, status int, v interface{}) {
+func XML(w http.ResponseWriter, status int, v interface{}) {
 	var result []byte
 	var err error
-	if r.opt.IndentXML {
+	if options.IndentXML {
 		result, err = xml.MarshalIndent(v, "", "  ")
 	} else {
 		result, err = xml.Marshal(v)
@@ -244,15 +236,15 @@ func (r *renderer) XML(w http.ResponseWriter, status int, v interface{}) {
 	}
 
 	// XML rendered fine, write out the result
-	w.Header().Set(ContentType, ContentXML+r.compiledCharset)
+	w.Header().Set(ContentType, ContentXML+prepareCharset(options.Charset))
 	w.WriteHeader(status)
-	if len(r.opt.PrefixXML) > 0 {
-		w.Write(r.opt.PrefixXML)
+	if len(options.PrefixXML) > 0 {
+		w.Write(options.PrefixXML)
 	}
 	w.Write(result)
 }
 
-func (r *renderer) Data(w http.ResponseWriter, status int, v []byte) {
+func Data(w http.ResponseWriter, status int, v []byte) {
 	if w.Header().Get(ContentType) == "" {
 		w.Header().Set(ContentType, ContentBinary)
 	}
@@ -260,47 +252,49 @@ func (r *renderer) Data(w http.ResponseWriter, status int, v []byte) {
 	w.Write(v)
 }
 
-func (r *renderer) Text(w http.ResponseWriter, status int, v string) {
+func Text(w http.ResponseWriter, status int, v string) {
 	if w.Header().Get(ContentType) == "" {
-		w.Header().Set(ContentType, ContentText+r.compiledCharset)
+		w.Header().Set(ContentType, ContentText+prepareCharset(options.Charset))
 	}
 	w.WriteHeader(status)
 	w.Write([]byte(v))
 }
 
 // Error writes the given HTTP status to the current ResponseWriter
-func (r *renderer) Error(w http.ResponseWriter, status int) {
+func Error(w http.ResponseWriter, status int, v []byte) {
+	w.WriteHeader(status)
+	w.Write(v)
+
+}
+
+func Status(w http.ResponseWriter, status int) {
 	w.WriteHeader(status)
 }
 
-func (r *renderer) Status(w http.ResponseWriter, status int) {
-	w.WriteHeader(status)
-}
-
-func (r *renderer) Redirect(w http.ResponseWriter, req *http.Request, location string, status ...int) {
+func Redirect(w http.ResponseWriter, r *http.Request, status int, location string) {
 	code := http.StatusFound
-	if len(status) == 1 {
-		code = status[0]
+	if status != 0 {
+		code = status
 	}
 
-	http.Redirect(w, req, location, code)
+	http.Redirect(w, r, location, code)
 }
 
-func (r *renderer) Template() *template.Template {
-	return r.t
+func Template() *template.Template {
+	return render
 }
 
-func (r *renderer) execute(name string, binding interface{}) (*bytes.Buffer, error) {
+func execute(name string, binding interface{}) (*bytes.Buffer, error) {
 	// Get buffer in BufferPool
 	buf := buffer.Get()
 
-	return buf, r.t.ExecuteTemplate(buf, name, binding)
+	return buf, render.ExecuteTemplate(buf, name, binding)
 }
 
-func (r *renderer) addYield(name string, binding interface{}) {
+func addYield(name string, binding interface{}) {
 	funcs := template.FuncMap{
 		"yield": func() (template.HTML, error) {
-			buf, err := r.execute(name, binding)
+			buf, err := execute(name, binding)
 			// return safe html here since we are rendering our own template
 			return template.HTML(buf.String()), err
 		},
@@ -308,15 +302,15 @@ func (r *renderer) addYield(name string, binding interface{}) {
 			return name, nil
 		},
 	}
-	r.t.Funcs(funcs)
+	render.Funcs(funcs)
 }
 
-func (r *renderer) prepareHTMLOptions(htmlOpt []HTMLOptions) HTMLOptions {
-	if len(htmlOpt) > 0 {
-		return htmlOpt[0]
+func prepareHTMLOptions(htmlOptions []HTMLOptions) HTMLOptions {
+	if len(htmlOptions) > 0 {
+		return htmlOptions[0]
 	}
 
 	return HTMLOptions{
-		Layout: r.opt.Layout,
+		Layout: options.Layout,
 	}
 }
