@@ -63,39 +63,39 @@ type renderer struct {
 // Delimiter represents a set of Left and Right delimiters for HTML template rendering
 type Delimiter struct {
 	// Left delimiter, defaults to {{
-	Left string
+	Left string `yaml:"Left"`
 	// Right delimiter, defaults to }}
-	Right string
+	Right string `yaml:"Right"`
 }
 
-// Options is a struct for specifying configuration options for the render.Render middleware
+// Options is a struct for specifying configuration options for the render.Init middleware
 type Options struct {
 	// Directory to load templates. Default is "templates"
-	Directory string
+	Directory string `yaml:"Directory"`
 	// Layout template name. Will not render a layout if "". Defaults to "".
-	Layout string
+	Layout string `yaml:"Layout"`
 	// Extensions to parse template files from. Defaults to [".tmpl"]
-	Extensions []string
+	Extensions []string `yaml:"Extensions"`
 	// Funcs is a slice of FuncMap to apply to the template upon compilation. This is useful for helper functions. Defaults to [].
-	FuncMap template.FuncMap
+	FuncMap template.FuncMap `yaml:"FuncMap"`
 	// Delimiter sets the action delimiters to the specified strings in the Delimiter struct.
-	Delimiter Delimiter
+	Delimiter Delimiter `yaml:"Delimiter"`
 	// Appends the given charset to the Content-Type header. Default is "UTF-8".
-	Charset string
+	Charset string `yaml:"Charset"`
 	// Outputs human readable JSON
-	IndentJSON bool
+	IndentJSON bool `yaml:"IndentJSON"`
 	// Outputs human readable XML
-	IndentXML bool
+	IndentXML bool `yaml:"IndentXML"`
 	// Prefixes the JSON output with the given bytes.
-	PrefixJSON []byte
+	PrefixJSON []byte `yaml:"PrefixJSON"`
 	// Prefixes the XML output with the given bytes.
-	PrefixXML []byte
+	PrefixXML []byte `yaml:"PrefixXML"`
 	// Allows changing of output to XHTML instead of HTML. Default is "text/html"
-	HTMLContentType string
+	HTMLContentType string `yaml:"HTMLContentType"`
 	// Initial BufferPool cap
-	BufferPool int
-	// Set template in development mode to refresh template.
-	DevMode bool
+	BufferPool int `yaml:"BufferPool"`
+	// Set template in debug mode to refresh template.
+	DebugMode bool `yaml:"DebugMode"`
 }
 
 // HTMLOptions is a struct for overriding some rendering Options for specific HTML call
@@ -104,12 +104,16 @@ type HTMLOptions struct {
 	Layout string
 }
 
-// Render is a external rendering. An single variadic render.Options struct can be optionally provided to configure HTML
+// Init is a external rendering. An single variadic render.Options struct can be optionally provided to configure HTML
 // rendering. The default directory for templates is "templates" and the default file extension is ".tmpl".
-func Render(o Options) {
+func Init(o Options) {
 	render.options = prepareOptions(o)
 	render.template = createTemplate()
 	render.buffer = helper.NewBufferPool(render.options.BufferPool)
+}
+
+func Render(o Options) {
+	Init(o)
 }
 
 func prepareCharset(charset string) string {
@@ -218,8 +222,8 @@ func JSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 func HTML(w http.ResponseWriter, status int, name string, binding interface{}, htmlOptions ...HTMLOptions) {
-	if render.options.DevMode {
-		logger.Debug("You are running in development mode, please do not use in production. Change to production mode in render.Options.")
+	if render.options.DebugMode {
+		logger.Debug("You are running in debug mode, please do not use in production. Change to production mode in render.Options.")
 		render.template = createTemplate()
 	}
 	option := prepareHTMLOptions(htmlOptions)
