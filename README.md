@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"openeasy.net/openeasy/render"
+	"github.com/ronzxy/go-render"
 )
 
 func main() {
@@ -88,4 +88,4 @@ The following templates:
 ```
 
 ## Authors ##
-[Sky](https://github.com/skygangsta/ "Skygangsta")
+[Ron Zhang](https://github.com/ronzxy/ "Ron Zhang")
